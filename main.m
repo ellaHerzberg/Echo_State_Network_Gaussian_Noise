@@ -19,6 +19,7 @@ alpha = 0.3; % leaking rate
 
 % rand('seed', 42);
 W_in = (rand(resSize,inSize+1)-0.5).* 1;
+% W_in(:,2) = 1;
 K = rand(resSize,resSize)-0.5;
 % normalizing and setting spectral radius (correct, slower):
 disp 'Computing ...';
@@ -29,31 +30,31 @@ K = K .* ( 1/rho_W);
 % allocated memory for the design (collected states) matrix
 X = zeros(1+inSize+resSize,trainLen-offset);
 % set the corresponding target matrix directly
-Y = [randn(1,100) input(1:trainLen-offset)'];
+Y_train = input(1:9900)';
 
 % run the reservoir with the data and collect X
-x = zeros(resSize,1);
+x_temp = zeros(resSize,1);
 for t = 1:trainLen
 	u = input(t);
-	x = (1-alpha)*x + alpha*tanh( W_in*[1;u] + K*x );
+	x_temp = (1-alpha)*x_temp + alpha*tanh( W_in*[1;u] + K*x_temp );
 	if t > offset
-		X(:,t-offset) = [1;u;x];
+		X(:,t-offset) = [1;u;x_temp];
 	end
 end
 
 % train the output
 reg = 1e-8;  % regularization coefficient
 X_T = X';
-W_out = Y*X_T * inv(X*X_T + reg*eye(1+inSize+resSize));
-% W_out = Yt*pinv(X);
+W_out = Y_train*X_T * inv(X*X_T + reg*eye(1+inSize+resSize));
+% W_out = Y_train*pinv(X);
 
 % run the trained ESN in a generative mode. no need to initialize here, 
 % because x is initialized with training data and we continue from there.
 Y = zeros(outSize,testLen);
-u = input(trainLen+1);
+u = input(trainLen);
 for t = 1:testLen 
-	x = (1-alpha)*x + alpha*tanh( W_in*[1;u] + K*x );
-	y = W_out*[1;u;x];
+	x_temp = (1-alpha)*x_temp + alpha*tanh( W_in*[1;u] + K*x_temp );
+	y = W_out*[1;u;x_temp];
 	Y(:,t) = y;
 	% generative mode:
 	u = y;
