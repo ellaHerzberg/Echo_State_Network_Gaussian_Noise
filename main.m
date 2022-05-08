@@ -6,8 +6,8 @@ clc
 
 input = randn(10000,1); % gaussian noise
 
-trainLen = length(input);
-testLen = 2000;
+trainLen = length(input)*0.9;
+testLen = length(input)*0.1;
 offset = 100;
 
 
@@ -30,7 +30,7 @@ K = K .* ( 1/rho_W);
 % allocated memory for the design (collected states) matrix
 X = zeros(1+inSize+resSize,trainLen-offset);
 % set the corresponding target matrix directly
-Y_train = input(1:9900)';
+Y_train = input(1:trainLen-offset)';
 
 % run the reservoir with the data and collect X
 x_temp = zeros(resSize,1);
@@ -43,23 +43,22 @@ for t = 1:trainLen
 end
 
 % train the output
-reg = 1e-8;  % regularization coefficient
+beta = 1e-8;  % regularization coefficient
 X_T = X';
-W_out = Y_train*X_T * inv(X*X_T + reg*eye(1+inSize+resSize));
-% W_out = Y_train*pinv(X);
+W_out = Y_train*X_T * inv(X*X_T + beta*eye(1+inSize+resSize));
 
-% run the trained ESN in a generative mode. no need to initialize here, 
-% because x is initialized with training data and we continue from there.
+% run the trained ESN in a generative mode.
+%%%%%--------------no need to initialize here, because x is initialized with training data and we continue from there.
 Y = zeros(outSize,testLen);
-u = input(trainLen);
-for t = 1:testLen 
+u = input(trainLen+1);
+for t = 1:testLen
 	x_temp = (1-alpha)*x_temp + alpha*tanh( W_in*[1;u] + K*x_temp );
 	y = W_out*[1;u;x_temp];
 	Y(:,t) = y;
 	% generative mode:
-	u = y;
+% 	u = y;
 	% this would be a predictive mode:
-% 	u = input(trainLen+t+1);
+	u = input(trainLen+t);
 end
 
 errorLen = 500;
@@ -68,7 +67,7 @@ disp( ['MSE = ', num2str( mse )] );
 
 % plot some signals
 figure(1);
-plot( input(trainLen+2:trainLen+testLen+1), 'color', [0,0.75,0] );
+plot( input(trainLen+2:trainLen+testLen), 'color', [0,0.75,0] );
 hold on;
 plot( Y', 'b' );
 hold off;
