@@ -1,12 +1,14 @@
-clear clc
+%% EX_3 - ESN
+clear all
+clc
 
 % init constants
 
 input = randn(10000,1); % gaussian noise
 
-trainLen = 2000;
+trainLen = length(input);
 testLen = 2000;
-initLen = 100;
+offset = 100;
 
 
 % generate the ESN reservoir
@@ -15,51 +17,48 @@ outSize = 100;
 resSize = 500;
 alpha = 0.3; % leaking rate
 
-rand('seed', 42);
-W_in = (rand(resSize,1+inSize)-0.5).* 1;
-W = rand(resSize,resSize)-0.5;
-% Option 1 - direct scaling (quick&dirty, reservoir-specific):
-% W = W .* 0.13;
-% Option 2 - normalizing and setting spectral radius (correct, slower):
-disp 'Computing gaussian noise...';
-opt.disp = 0;
-rho_W = abs(eigs(W,1,'LM',opt));
+% rand('seed', 42);
+W_in = (rand(resSize,inSize+1)-0.5).* 1;
+K = rand(resSize,resSize)-0.5;
+% normalizing and setting spectral radius (correct, slower):
+disp 'Computing ...';
+rho_W = abs(eigs(K,1,'LM'));
 disp 'done.'
-W = W .* ( 1.25 /rho_W);
+K = K .* ( 1/rho_W);
 
 % allocated memory for the design (collected states) matrix
-X = zeros(1+inSize+resSize,trainLen-initLen);
+X = zeros(1+inSize+resSize,trainLen-offset);
 % set the corresponding target matrix directly
-Yt = input(initLen+2:trainLen+1)';
+Y = [randn(1,100) input(1:trainLen-offset)'];
 
 % run the reservoir with the data and collect X
 x = zeros(resSize,1);
 for t = 1:trainLen
 	u = input(t);
-	x = (1-alpha)*x + alpha*tanh( W_in*[1;u] + W*x );
-	if t > initLen
-		X(:,t-initLen) = [1;u;x];
+	x = (1-alpha)*x + alpha*tanh( W_in*[1;u] + K*x );
+	if t > offset
+		X(:,t-offset) = [1;u;x];
 	end
 end
 
 % train the output
 reg = 1e-8;  % regularization coefficient
 X_T = X';
-W_out = Yt*X_T * inv(X*X_T + reg*eye(1+inSize+resSize));
-% Wout = Yt*pinv(X);
+W_out = Y*X_T * inv(X*X_T + reg*eye(1+inSize+resSize));
+% W_out = Yt*pinv(X);
 
 % run the trained ESN in a generative mode. no need to initialize here, 
 % because x is initialized with training data and we continue from there.
 Y = zeros(outSize,testLen);
 u = input(trainLen+1);
 for t = 1:testLen 
-	x = (1-alpha)*x + alpha*tanh( W_in*[1;u] + W*x );
+	x = (1-alpha)*x + alpha*tanh( W_in*[1;u] + K*x );
 	y = W_out*[1;u;x];
 	Y(:,t) = y;
 	% generative mode:
 	u = y;
 	% this would be a predictive mode:
-	%u = data(trainLen+t+1);
+% 	u = input(trainLen+t+1);
 end
 
 errorLen = 500;
