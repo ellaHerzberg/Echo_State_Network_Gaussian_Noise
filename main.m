@@ -61,9 +61,11 @@ for t = 1:testLen
 	u = input(trainLen+t);
 end
 
-errorLen = 500;
+errorLen = 100;
 mse = sum((input(trainLen+2:trainLen+errorLen+1)'-Y(1,1:errorLen)).^2)./errorLen;
 disp( ['MSE = ', num2str( mse )] );
+
+
 
 % plot some signals
 figure(1);
