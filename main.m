@@ -1,87 +1,88 @@
 %% EX_3 - ESN
-clear all
-clc
+clear;
+close all;
+clc;
 
-% init constants
 
-input = randn(10000,1); % gaussian noise
+% Define network size
+in_size = 1;
+out_size = 100;
+res_size = 500;
+input_len = 10000;
+train_len = input_len - out_size;
 
-trainLen = length(input)*0.9;
-testLen = length(input)*0.1;
-offset = 100;
+% Learning input_scalestants
+zero_w_percent = 0.4;   % 0-weights precentage
+alpha = 0.99;           % leaking rate
+beta = 1e-10;           % regularization coefficient
+input_scale = 0.0005;   % how strongly input affects
+
+% Set the input and target matrix
+input = randn(input_len, in_size); % gaussian noise
+Y0 = buffer(input, out_size, out_size - 1);
+Y0 = Y0(:, out_size+1:end);
+Y0 = flip(Y0);
+input = input(out_size+1:end);
 
 
 % generate the ESN reservoir
-inSize = 1;
-outSize = 100;
-resSize = 500;
-alpha = 0.3; % leaking rate
+W_in = randn(res_size,in_size) * input_scale;
+K = randn(res_size,res_size);
 
-% rand('seed', 42);
-W_in = (rand(resSize,inSize+1)-0.5).* 1;
-% W_in(:,2) = 1;
-K = rand(resSize,resSize)-0.5;
-% normalizing and setting spectral radius (correct, slower):
-disp 'Computing ...';
-rho_W = abs(eigs(K,1,'LM'));
-disp 'done.'
-K = K .* ( 1/rho_W);
+% Set some weights as zero, and normalize network:
+for row = 1:res_size
+   K(row, :) = [K(row, 1:res_size*(1-zero_w_percent)) zeros(1, res_size * zero_w_percent)];
+   K(row, randperm(size(K, 2))) = K(row, :);
+end
 
-% allocated memory for the design (collected states) matrix
-X = zeros(1+inSize+resSize,trainLen-offset);
-% set the corresponding target matrix directly
-Y_train = input(1:trainLen-offset)';
+rho_W = real(eigs(K,1,'largestreal'));
+K = K * (1/rho_W);
 
-% run the reservoir with the data and collect X
-x_temp = zeros(resSize,1);
-for t = 1:trainLen
-	u = input(t);
-	x_temp = (1-alpha)*x_temp + alpha*tanh( W_in*[1;u] + K*x_temp );
-	if t > offset
-		X(:,t-offset) = [1;u;x_temp];
-	end
+% Allocated memory for the matrix state
+X = zeros(1+in_size+res_size, input_len - out_size);
+R = zeros(res_size, input_len - out_size);
+
+
+% Run the reservoir with the data and collect X
+R(:,1) = (1-alpha)*R(:,1) + alpha*tanh(W_in*input(1)+K*R(:,1));
+for t = 1:train_len
+    curr_r = R(:,t);
+    X(:,t) = [1;input(t);curr_r];
+    if t <= train_len-1
+        R(:,t+1) = (1-alpha)*curr_r + alpha*tanh(W_in*input(t+1)+K*curr_r);
+    end
 end
 
 % train the output
-beta = 1e-8;  % regularization coefficient
-X_T = X';
-W_out = Y_train*X_T * inv(X*X_T + beta*eye(1+inSize+resSize));
+W_out = Y0*X' * (X*X' + beta*eye(1+in_size+res_size))^(-1);
 
-% run the trained ESN in a generative mode.
-%%%%%--------------no need to initialize here, because x is initialized with training data and we continue from there.
-Y = zeros(outSize,testLen);
-u = input(trainLen+1);
-for t = 1:testLen
-	x_temp = (1-alpha)*x_temp + alpha*tanh( W_in*[1;u] + K*x_temp );
-	y = W_out*[1;u;x_temp];
+% run the trained ESN in a predictive mode.
+Y = zeros(out_size,train_len);
+u = input(1);
+for t = 1:train_len
+	curr_x = [1;input(t);R(:,t)];
+	y = tanh(W_out * curr_x);
 	Y(:,t) = y;
-	% generative mode:
-% 	u = y;
-	% this would be a predictive mode:
-	u = input(trainLen+t);
+	u = input(t);
 end
 
-errorLen = 100;
-mse = sum((input(trainLen+2:trainLen+errorLen+1)'-Y(1,1:errorLen)).^2)./errorLen;
-disp( ['MSE = ', num2str( mse )] );
+% Calc R square error
+mean_y0 = mean(Y0,2);
+SSres = sum((Y-Y0)'.^2);
+SStot = sum((Y0-mean_y0)'.^2);
 
+for s = 1:out_size
+    error(s) = 1-(SSres(:,s)/SStot(:,s));
+end
 
+% Plots
+plot(1:out_size, error,'color','g');
+title('R square for each output neuron');
+xlabel("Memory step ");
+ylabel("Correlation coefficient");
 
-% plot some signals
-figure(1);
-plot( input(trainLen+2:trainLen+testLen), 'color', [0,0.75,0] );
-hold on;
-plot( Y', 'b' );
-hold off;
-axis tight;
-title('Target and generated signals y(n) starting at n=0');
-legend('Target signal', 'Free-running predicted signal');
-
-figure(2);
-plot( X(1:20,1:200)' );
-title('Some reservoir activations x(n)');
-
-figure(3);
-bar( W_out' )
-title('Output weights W^{out}');
-
+% Disp Memory Capacity
+memory = sum(error);
+fprintf('Memory Capacity:');
+disp(memory);
+ 
